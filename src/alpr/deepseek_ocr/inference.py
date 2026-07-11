@@ -21,7 +21,6 @@ class OCR:
 def get_args():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--ocr_cp", type=str, default=DEEPSEEK_OCR_WEIGHTS_DIR)
     parser.add_argument("--img_path", type=str, default="")
 
     return parser.parse_args()
@@ -29,9 +28,8 @@ def get_args():
 def main():
     args = get_args()
 
-    ocr_cp = args.ocr_cp
     img_path = args.img_path
-    ocr = OCR(ocr_cp)
+    ocr = OCR(DEEPSEEK_OCR_WEIGHTS_DIR)
 
     result = ocr.inference(img_path)
     print(result)

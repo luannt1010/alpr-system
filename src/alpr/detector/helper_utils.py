@@ -3,29 +3,34 @@ import json
 import time
 import torch
 from tqdm.auto import tqdm
+from PIL import Image
+import numpy as np
+from pathlib import Path
+import cv2
+from ultralytics import YOLO
 from torch.amp import autocast, GradScaler
 from torch.optim import lr_scheduler
 import torchvision.utils as vutils
 import matplotlib.pyplot as plt
 from alpr.detector.net import Model
-from alpr.paths import DETECTOR_WEIGHTS_DIR, LOG_OUTPUT_DIR, FIGURE_OUTPUT_DIR
+from alpr.paths import LOG_OUTPUT_DIR, FIGURE_OUTPUT_DIR, FASTRCNN_WEIGHTS_DIR
 from torch.utils.data import random_split, DataLoader
 from torchmetrics.detection.mean_ap import MeanAveragePrecision
 from torchvision.transforms.functional import to_pil_image
 from torchvision.transforms import transforms
 
 
-def draw_bbox(image, target, class_map):
-    boxes = target["boxes"]
-    tar_labels = target["labels"]
-    labels = [class_map[int(i)] for i in tar_labels]
-    result = vutils.draw_bounding_boxes(image=image,
-                                        boxes=boxes,
-                                        labels=labels,
-                                        colors="red",
-                                        width=4, font_size=30)
-    result = to_pil_image(result)
-    result.show()
+# def draw_bbox(image, target, class_map):
+#     boxes = target["boxes"]
+#     tar_labels = target["labels"]
+#     labels = [class_map[int(i)] for i in tar_labels]
+#     result = vutils.draw_bounding_boxes(image=image,
+#                                         boxes=boxes,
+#                                         labels=labels,
+#                                         colors="red",
+#                                         width=4, font_size=30)
+#     result = to_pil_image(result)
+#     result.show()
 
 
 def split_dataset(datasets, val_factor, test_factor):
@@ -36,6 +41,36 @@ def split_dataset(datasets, val_factor, test_factor):
     train_dataset, val_dataset, test_dataset = random_split(datasets, [train_size, val_size, test_size])
     return train_dataset, val_dataset, test_dataset
 
+def check_path(img):
+    return isinstance(img, (str, Path))
+
+def read_img(img):
+    if check_path(img):
+        return Image.open(img).convert("RGB")
+
+    if isinstance(img, Image.Image):
+        return img.convert("RGB")
+
+    if isinstance(img, np.ndarray):
+        if img.ndim == 2:
+            return Image.fromarray(img).convert("RGB")
+        if img.ndim == 3 and img.shape[2] == 4:
+            img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGB)
+        elif img.ndim == 3 and img.shape[2] == 3:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        return Image.fromarray(img)
+
+def crop_image(img, bbox):
+    image = read_img(img)
+    return image.crop(bbox)
+
+def draw_bbox(img, bbox, label, score):
+    orig_img = np.asarray(read_img(img))
+    orig_img = cv2.cvtColor(orig_img, cv2.COLOR_BGR2RGB)
+    x1, y1, x2, y2 = bbox
+    img = cv2.rectangle(orig_img, pt1=(x1,y1), pt2=(x2,y2), color=(0,255,0), thickness=3)
+    img = cv2.putText(img, f"{label, round(score,2)}", (x1, max(y1 - 10, 20)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 2)
+    return img
 
 def create_dataset_splits(dataset, val_factor, test_factor):
     train_dataset, val_dataset, test_dataset = split_dataset(dataset, val_factor, test_factor)
@@ -57,7 +92,10 @@ def define_transforms():
     val_transform = transforms.Compose([transforms.ToTensor()])
     return train_transform, val_transform
 
-def load_model_state_dict(model_obj, num_classes, state_dict_path):
+def load_yolo_state_dict(weight_path):
+    return YOLO(weight_path)
+
+def load_faster_rcnn_state_dict(model_obj, num_classes, state_dict_path):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = Model(model_obj=model_obj, num_classes=num_classes)
     state_dict = torch.load(state_dict_path, map_location=device)
@@ -116,9 +154,9 @@ def train(model, train_loader, val_loader, optimizer, num_epochs, scheduler=None
 
     os.makedirs(FIGURE_OUTPUT_DIR, exist_ok=True)
     os.makedirs(LOG_OUTPUT_DIR, exist_ok=True)
-    os.makedirs(DETECTOR_WEIGHTS_DIR, exist_ok=True)
-    best_save_path = os.path.join(DETECTOR_WEIGHTS_DIR, "best.pth")
-    best_last_path = os.path.join(DETECTOR_WEIGHTS_DIR, "last.pth")
+    os.makedirs(FASTRCNN_WEIGHTS_DIR, exist_ok=True)
+    best_save_path = os.path.join(FASTRCNN_WEIGHTS_DIR, "best.pth")
+    best_last_path = os.path.join(FASTRCNN_WEIGHTS_DIR, "last.pth")
 
     metric = MeanAveragePrecision(box_format='xyxy', iou_type='bbox', extended_summary=True)
     for epoch in range(num_epochs):
@@ -164,7 +202,7 @@ def train(model, train_loader, val_loader, optimizer, num_epochs, scheduler=None
 
     print("Training successfully!")
     print(f"Spent {history['total_time']:.4f} minutes to train.")
-    print(f"Model weight is saved at directory {DETECTOR_WEIGHTS_DIR}.")
+    print(f"Model weight is saved at directory {FASTRCNN_WEIGHTS_DIR}.")
     return history
 
 

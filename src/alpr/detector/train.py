@@ -4,7 +4,7 @@ from alpr.detector.net import Model
 from alpr.detector import helper_utils
 from alpr.detector.dataset import LicensePlateDataset
 from alpr.detector.config import MODEL_OBJECT
-from alpr.paths import DETECT_DATA_DIR, FIGURE_OUTPUT_DIR, DETECTOR_CHECKPOINT_DIR
+from alpr.paths import DETECT_DATA_DIR, FIGURE_OUTPUT_DIR, FASTRCNN_CHECKPOINT_DIR
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -57,7 +57,7 @@ def main():
     history = helper_utils.train(model=model, train_loader=train_loader, val_loader=val_loader,
                                  optimizer=optimizer, num_epochs=num_epochs, scheduler=scheduler)
 
-    model_best = helper_utils.load_model_state_dict(model_object, num_classes, DETECTOR_CHECKPOINT_DIR)
+    model_best = helper_utils.load_faster_rcnn_state_dict(model_object, num_classes, FASTRCNN_CHECKPOINT_DIR)
     test_map_50, test_map_5095 = helper_utils.evaluate(model_best, test_loader, test=True)
     history["test_map_50"] = test_map_50
     history["test_map_5095"] = test_map_5095
